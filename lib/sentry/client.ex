@@ -38,7 +38,7 @@ defmodule Sentry.Client do
 
   require Logger
 
-  @type get_dsn :: {String.t, String.t, Integer.t}
+  @type get_dsn :: {String.t, String.t, Integer.t} | :error
   @sentry_version 5
   @max_attempts 4
   @hackney_pool_name :sentry_pool
@@ -81,30 +81,39 @@ defmodule Sentry.Client do
   end
 
   defp do_send_event(event, body, :async) do
-    {endpoint, public_key, secret_key} = get_dsn!()
-    auth_headers = authorization_headers(public_key, secret_key)
-    {:ok, Task.Supervisor.async_nolink(Sentry.TaskSupervisor, fn ->
-      try_request(:post, endpoint, auth_headers, body)
-      |> maybe_call_after_send_event(event)
-    end)}
+    case get_headers_and_endpoint() do
+      {endpoint, auth_headers} ->
+        {:ok, Task.Supervisor.async_nolink(Sentry.TaskSupervisor, fn ->
+          try_request(:post, endpoint, auth_headers, body)
+          |> maybe_call_after_send_event(event)
+        end)}
+      _ ->
+        :error
+    end
   end
 
   defp do_send_event(event, body, :sync) do
-    {endpoint, public_key, secret_key} = get_dsn!()
-    auth_headers = authorization_headers(public_key, secret_key)
-    try_request(:post, endpoint, auth_headers, body)
-    |> maybe_call_after_send_event(event)
+    case get_headers_and_endpoint() do
+      {endpoint, auth_headers} ->
+        try_request(:post, endpoint, auth_headers, body)
+        |> maybe_call_after_send_event(event)
+      _ ->
+        :error
+    end
   end
 
   defp do_send_event(event, body, :none) do
-    {endpoint, public_key, secret_key} = get_dsn!()
-    auth_headers = authorization_headers(public_key, secret_key)
-    Task.Supervisor.start_child(Sentry.TaskSupervisor, fn ->
-      try_request(:post, endpoint, auth_headers, body)
-      |> maybe_call_after_send_event(event)
-    end)
+    case get_headers_and_endpoint() do
+      {endpoint, auth_headers} ->
+        Task.Supervisor.start_child(Sentry.TaskSupervisor, fn ->
+          try_request(:post, endpoint, auth_headers, body)
+          |> maybe_call_after_send_event(event)
+        end)
 
-    {:ok, ""}
+        {:ok, ""}
+      _ ->
+        :error
+    end
   end
 
   defp try_request(method, url, headers, body, current_attempt \\ 1)
@@ -171,17 +180,23 @@ defmodule Sentry.Client do
 
   @doc """
   Get a Sentry DSN which is simply a URI.
-  """
-  @spec get_dsn! :: get_dsn
-  def get_dsn! do
-    # {PROTOCOL}://{PUBLIC_KEY}:{SECRET_KEY}@{HOST}/{PATH}{PROJECT_ID}
-    %URI{userinfo: userinfo, host: host, port: port, path: path, scheme: protocol} = URI.parse(Config.dsn())
-    [public_key, secret_key] = String.split(userinfo, ":", parts: 2)
-    [_, binary_project_id] = String.split(path, "/")
-    project_id = String.to_integer(binary_project_id)
-    endpoint = "#{protocol}://#{host}:#{port}/api/#{project_id}/store/"
 
-    {endpoint, public_key, secret_key}
+  {PROTOCOL}://{PUBLIC_KEY}:{SECRET_KEY}@{HOST}/{PATH}{PROJECT_ID}
+  """
+  @spec get_dsn :: get_dsn
+  def get_dsn do
+    dsn = Config.dsn()
+    with %URI{userinfo: userinfo, host: host, port: port, path: path, scheme: protocol} when is_binary(path) <- URI.parse(dsn),
+         [public_key, secret_key] <- String.split(userinfo, ":", parts: 2),
+         [_, binary_project_id] <- String.split(path, "/"),
+         {project_id, ""} <- Integer.parse(binary_project_id),
+         endpoint <- "#{protocol}://#{host}:#{port}/api/#{project_id}/store/"
+    do
+      {endpoint, public_key, secret_key}
+    else _ ->
+      log_api_error("Cannot send event because of invalid DSN")
+      :error
+    end
   end
 
   def maybe_call_after_send_event(result, event) do
@@ -214,6 +229,15 @@ defmodule Sentry.Client do
 
   def hackney_pool_name do
     @hackney_pool_name
+  end
+
+  defp get_headers_and_endpoint do
+    case get_dsn() do
+      {endpoint, public_key, secret_key} ->
+         {endpoint, authorization_headers(public_key, secret_key)}
+      _ ->
+        :error
+    end
   end
 
   defp log_api_error(body) do
