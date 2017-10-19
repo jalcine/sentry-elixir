@@ -16,7 +16,7 @@ defmodule Sentry.ConfigTest do
   end
 
   test "retrieves from confex" do
-    modify_confex(%{"SENTRY_DSN" => "https://public:secret@app.getsentry.com/1"})
+    modify_system_env(%{"SENTRY_DSN" => "https://public:secret@app.getsentry.com/1"})
 
     assert "https://public:secret@app.getsentry.com/1" == Config.dsn()
   end

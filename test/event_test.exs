@@ -167,6 +167,6 @@ defmodule Sentry.EventTest do
       cowlib: "1.0.2", credo: "0.8.6", hackney: "1.8.0", idna: "4.0.0",
       metrics: "1.0.1", mime: "1.1.0", mimerl: "1.0.2", plug: "1.4.3",
       poison: "3.1.0", ranch: "1.3.2", ssl_verify_fun: "1.1.1",
-      uuid: "1.1.7"}
+      uuid: "1.1.7", confex: "3.3.0"}
   end
 end

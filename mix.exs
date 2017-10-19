@@ -28,7 +28,7 @@ defmodule Sentry.Mixfile do
       {:uuid, "~> 1.0"},
       {:poison, "~> 1.5 or ~> 2.0 or ~> 3.0"},
       {:plug, "~> 1.0", optional: true},
-
+      {:confex, "~> 3.3.0", optional: true},
       {:dialyxir, "> 0.0.0", only: :dev},
       {:ex_doc, "~> 0.16.0", only: :dev},
       {:credo, "~> 0.8", only: [:dev, :test], runtime: false},
